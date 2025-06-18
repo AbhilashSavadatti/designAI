@@ -21,16 +21,20 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Initialize OpenAI
+// Initialize OpenAI (still needed for text generation and speech-to-text)
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Stability AI Configuration
+const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
+const STABILITY_API_URL = 'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image';
 
 // Use case specific prompts and configurations
 const USE_CASE_CONFIGS = {
   interior: {
     name: 'Interior Design',
-    imageStyle: 'interior design, modern, architectural visualization, high-quality render',
+    imageStyle: 'interior design, modern, architectural visualization, high-quality render, photorealistic, professional photography',
     promptTemplate: (userPrompt) => `Create an interior design concept based on: "${userPrompt}". 
     Focus on: space planning, furniture selection, color schemes, lighting design, material choices, and functionality.
     Consider ergonomics, aesthetics, and user experience.`,
@@ -38,7 +42,7 @@ const USE_CASE_CONFIGS = {
   },
   architecture: {
     name: 'Architecture', 
-    imageStyle: 'architectural design, building exterior, modern architecture, concept sketch',
+    imageStyle: 'architectural design, building exterior, modern architecture, concept sketch, professional architectural rendering',
     promptTemplate: (userPrompt) => `Create an architectural design concept based on: "${userPrompt}".
     Focus on: building form, structural elements, sustainability features, site integration, and aesthetic appeal.
     Consider environmental factors, building codes, and user needs.`,
@@ -46,7 +50,7 @@ const USE_CASE_CONFIGS = {
   },
   construction: {
     name: 'Construction',
-    imageStyle: 'construction planning, building process, technical drawing, project management',
+    imageStyle: 'construction planning, building process, technical drawing, project management, blueprint style',
     promptTemplate: (userPrompt) => `Create a construction project concept based on: "${userPrompt}".
     Focus on: construction methodology, timeline planning, resource allocation, safety considerations, and stakeholder coordination.
     Consider project phases, material logistics, and quality control.`,
@@ -54,7 +58,7 @@ const USE_CASE_CONFIGS = {
   },
   event: {
     name: 'Event Design',
-    imageStyle: 'event design, venue setup, decorative elements, lighting design',
+    imageStyle: 'event design, venue setup, decorative elements, lighting design, party planning, celebration',
     promptTemplate: (userPrompt) => `Create an event design concept based on: "${userPrompt}".
     Focus on: venue layout, seating arrangements, lighting design, decorative elements, and guest experience.
     Consider event flow, accessibility, and thematic coherence.`,
@@ -77,22 +81,102 @@ function generateDesignVariations(basePrompt, useCase) {
   }));
 }
 
-// Helper function to generate image using DALL-E
+// Helper function to generate image using Stability AI
 async function generateImage(prompt, style) {
   try {
-    const response = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: `${prompt}, ${style}, professional architectural visualization, high quality, detailed`,
-      size: "1024x1024",
-      quality: "standard",
-      n: 1,
-    });
+    if (!STABILITY_API_KEY) {
+      console.warn('Stability AI API key not found, using placeholder image');
+      return `https://via.placeholder.com/1024x1024/4A90E2/FFFFFF?text=Design+Concept+${Math.floor(Math.random() * 1000)}`;
+    }
 
-    return response.data[0].url;
+    const fullPrompt = `${prompt}, ${style}, professional architectural visualization, high quality, detailed, 8k resolution, masterpiece`;
+    
+    const response = await axios.post(
+      STABILITY_API_URL,
+      {
+        text_prompts: [
+          {
+            text: fullPrompt,
+            weight: 1
+          }
+        ],
+        cfg_scale: 7,
+        height: 1024,
+        width: 1024,
+        samples: 1,
+        steps: 30,
+        style_preset: "photographic" // Options: enhance, anime, photographic, digital-art, comic-book, fantasy-art, line-art, analog-film, neon-punk, isometric, low-poly, origami, modeling-compound, cinematic, 3d-model, pixel-art, tile-texture
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${STABILITY_API_KEY}`,
+        },
+      }
+    );
+
+    if (response.data.artifacts && response.data.artifacts.length > 0) {
+      // Stability AI returns base64 encoded images
+      const base64Image = response.data.artifacts[0].base64;
+      return `data:image/png;base64,${base64Image}`;
+    } else {
+      throw new Error('No image generated from Stability AI');
+    }
+
   } catch (error) {
-    console.error('Error generating image:', error);
-    // Return a placeholder image URL if DALL-E fails
-    return `https://via.placeholder.com/400x300/4A90E2/FFFFFF?text=Design+Concept+${Math.floor(Math.random() * 1000)}`;
+    console.error('Error generating image with Stability AI:', error.response?.data || error.message);
+    // Return a placeholder image URL if Stability AI fails
+    return `https://via.placeholder.com/1024x1024/4A90E2/FFFFFF?text=Design+Concept+${Math.floor(Math.random() * 1000)}`;
+  }
+}
+
+// Alternative Stability AI image generation with different models
+async function generateImageWithModel(prompt, style, model = 'stable-diffusion-xl-1024-v1-0') {
+  try {
+    if (!STABILITY_API_KEY) {
+      console.warn('Stability AI API key not found, using placeholder image');
+      return `https://via.placeholder.com/1024x1024/4A90E2/FFFFFF?text=Design+Concept+${Math.floor(Math.random() * 1000)}`;
+    }
+
+    const fullPrompt = `${prompt}, ${style}, professional architectural visualization, high quality, detailed, 8k resolution, masterpiece`;
+    const apiUrl = `https://api.stability.ai/v1/generation/${model}/text-to-image`;
+    
+    const response = await axios.post(
+      apiUrl,
+      {
+        text_prompts: [
+          {
+            text: fullPrompt,
+            weight: 1
+          }
+        ],
+        cfg_scale: 7,
+        height: 1024,
+        width: 1024,
+        samples: 1,
+        steps: 30,
+        style_preset: "photographic"
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${STABILITY_API_KEY}`,
+        },
+      }
+    );
+
+    if (response.data.artifacts && response.data.artifacts.length > 0) {
+      const base64Image = response.data.artifacts[0].base64;
+      return `data:image/png;base64,${base64Image}`;
+    } else {
+      throw new Error('No image generated from Stability AI');
+    }
+
+  } catch (error) {
+    console.error('Error generating image with Stability AI:', error.response?.data || error.message);
+    return `https://via.placeholder.com/1024x1024/4A90E2/FFFFFF?text=Design+Concept+${Math.floor(Math.random() * 1000)}`;
   }
 }
 
@@ -158,7 +242,7 @@ async function generateDesignSummary(prompt, style) {
 // Main API endpoint for design generation
 app.post('/api/designs', async (req, res) => {
   try {
-    const { prompt, useCase } = req.body;
+    const { prompt, useCase, model } = req.body;
 
     if (!prompt || !useCase) {
       return res.status(400).json({ 
@@ -182,7 +266,7 @@ app.post('/api/designs', async (req, res) => {
     // Generate designs concurrently for better performance
     const designPromises = designVariations.map(async (variation) => {
       const [image, highlights, summary] = await Promise.all([
-        generateImage(variation.prompt, useCaseConfig.imageStyle),
+        model ? generateImageWithModel(variation.prompt, useCaseConfig.imageStyle, model) : generateImage(variation.prompt, useCaseConfig.imageStyle),
         generateDesignHighlights(variation.prompt, useCaseConfig),
         generateDesignSummary(variation.prompt, variation.style)
       ]);
@@ -209,7 +293,19 @@ app.post('/api/designs', async (req, res) => {
   }
 });
 
-// Speech-to-text API endpoint
+// New endpoint to get available Stability AI models
+app.get('/api/stability-models', (req, res) => {
+  const models = [
+    { value: 'stable-diffusion-xl-1024-v1-0', label: 'Stable Diffusion XL 1.0' },
+    { value: 'stable-diffusion-v1-6', label: 'Stable Diffusion v1.6' },
+    { value: 'stable-diffusion-512-v2-1', label: 'Stable Diffusion v2.1' },
+    { value: 'stable-diffusion-xl-beta-v2-2-2', label: 'Stable Diffusion XL Beta' }
+  ];
+  
+  res.json(models);
+});
+
+// Speech-to-text API endpoint (still using OpenAI Whisper)
 app.post('/api/speech-to-text', upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
@@ -248,7 +344,8 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    stabilityApiConfigured: !!STABILITY_API_KEY
   });
 });
 
@@ -282,6 +379,7 @@ app.listen(PORT, () => {
   console.log(`📋 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🎨 Design API: http://localhost:${PORT}/api/designs`);
   console.log(`🎤 Speech API: http://localhost:${PORT}/api/speech-to-text`);
+  console.log(`🖼️  Stability AI configured: ${!!STABILITY_API_KEY}`);
 });
 
 module.exports = app;
