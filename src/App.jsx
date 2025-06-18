@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { ChakraProvider, Container, Heading } from '@chakra-ui/react';
-import PromptInterface from './components/PromptInterface';
-import DesignOutput from './components/DesignOutput';
+import PromptInterface from './components/PromptInterface/PromptInterface';
+import DesignOutput from './components/DesignOutput/DesignOutput';
 import { generateDesigns } from './Services/designService';
 
 function App() {
@@ -14,21 +13,21 @@ function App() {
       const generatedDesigns = await generateDesigns(prompt, useCase);
       setDesigns(generatedDesigns);
     } catch (error) {
-      // Handle error
+      console.error('Error generating designs:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <ChakraProvider>
-      <Container maxW="container.xl" py={8}>
-        <Heading mb={8}>AI Design Generator</Heading>
-        <PromptInterface onSubmit={handleSubmit} />
-        {isLoading && <p>Generating designs...</p>}
-        {designs.length > 0 && <DesignOutput designs={designs} />}
-      </Container>
-    </ChakraProvider>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+      <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '2rem' }}>
+        AI Design Generator
+      </h1>
+      <PromptInterface onSubmit={handleSubmit} />
+      {isLoading && <p>Generating designs...</p>}
+      {designs.length > 0 && <DesignOutput designs={designs} />}
+    </div>
   );
 }
 
